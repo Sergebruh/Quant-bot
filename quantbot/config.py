@@ -57,6 +57,10 @@ def validate(cfg):
     reg = cfg["regime"]
     if reg["n_states"] < 2:
         raise ValueError("regime.n_states must be at least 2")
+    if reg.get("mode", "filter") not in ("filter", "scale"):
+        raise ValueError("regime.mode must be filter or scale")
+    if not 0 < reg.get("trend_prob_threshold", 0.5) < 1:
+        raise ValueError("regime.trend_prob_threshold must be between 0 and 1")
     if not 0 < reg["calm_prob_threshold"] < 1:
         raise ValueError("regime.calm_prob_threshold must be between 0 and 1")
 

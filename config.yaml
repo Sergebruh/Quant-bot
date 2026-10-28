@@ -65,11 +65,17 @@ signal:
   max_hold_days: 10             # time stop
 
 regime:
-  n_states: 3                   # calm / trending / crisis
-  vol_window: 20                # days for the rolling-volatility feature
-  train_window: 756             # ~3 years of daily bars per refit
+  enabled: false
+  mode: filter                  # filter: trade only in the trending state
+                                # scale: size by P(trending)
+  n_states: 2                   # trending vs choppy
+  features: [vr5]               # 5-day avg variance ratio (see regime.py)
+  train_window: 756             # ~3 years of daily features per refit
+  min_train_days: 252           # start once 1 year of history exists
   refit_every: 21               # refit roughly monthly
-  calm_prob_threshold: 0.6      # only trade when P(calm) is above this
+  trend_prob_threshold: 0.5     # filter mode: trade when P(trending) > this
+  calm_prob_threshold: 0.6      # (daily swing version, unused here)
+  vol_window: 20                # (daily swing version, unused here)
 
 sizing:
   method: none                  # none | vol_target

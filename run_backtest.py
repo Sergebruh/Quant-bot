@@ -10,6 +10,7 @@ from quantbot.backtest import buy_and_hold, run_backtest
 from quantbot.config import load_config
 from quantbot.intraday import session_dates, vwap_reversion_positions
 from quantbot.momentum import momentum_positions
+from quantbot.regime import regime_scale
 from quantbot.sizing import apply_sizing
 
 ROWS = [
@@ -55,6 +56,9 @@ def run(cfg, bars, strategy=None, period="all"):
     else:
         weight, reasons, _ = vwap_reversion_positions(bars, cfg)
     weight = apply_sizing(weight, bars, cfg)
+    if cfg["regime"].get("enabled"):
+        # Days before the HMM has a year of history trade unfiltered.
+        weight = weight * regime_scale(bars, cfg).fillna(1.0)
     bars = period_slice(bars, cfg, period)
     sessions = session_dates(bars.index)
     return run_backtest(bars, weight.reindex(bars.index), cfg, reasons.reindex(bars.index),
