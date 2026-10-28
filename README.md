@@ -7,6 +7,18 @@ position with volatility and a fractional Kelly criterion.
 
 > Status: design phase. The code isn't written yet; this document is the plan.
 
+## Getting started
+
+```bash
+git clone https://github.com/Sergebruh/Quant-bot.git
+cd Quant-bot
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python -m pytest
+```
+
+All tunable settings (costs, z-score levels, HMM, sizing) live in `config.yaml`.
+
 ## Strategy in one picture
 
 ```
