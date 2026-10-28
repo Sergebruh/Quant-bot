@@ -39,11 +39,19 @@ data:
   cache_dir: data
 
 costs:
-  # Conservative: Alpaca charges $0 commission on stocks; this is a typical
-  # per-share broker fee so results don't depend on a free broker.
-  commission_per_share: 0.005   # dollars per share
-  commission_min: 1.00          # minimum dollars per order
-  slippage_bps: 2.0             # basis points per side (2 bps = 0.02%)
+  # Realistic, from measured data: SPY's quoted spread is ~1 cent, a half-spread
+  # of ~0.18 bp (360 Alpaca quotes over 60 random days, see RESEARCH_LOG run 3).
+  # Slippage is set ~2.8x higher than that for safety. Commission is a typical
+  # per-share broker rate (Alpaca itself charges $0).
+  commission_per_share: 0.0035  # dollars per share
+  commission_min: 0.35          # minimum dollars per order
+  slippage_bps: 0.5             # basis points per side
+
+stress_costs:
+  # Pessimistic profile, always reported next to the realistic one.
+  commission_per_share: 0.005
+  commission_min: 1.00
+  slippage_bps: 2.0
 
 backtest:
   starting_equity: 100000

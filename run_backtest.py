@@ -1,6 +1,7 @@
 """Day-trading backtest on 5-minute bars (strategy chosen in config.yaml)."""
 
 import argparse
+import copy
 
 import pandas as pd
 
@@ -81,7 +82,13 @@ def main():
 
     print(f"{d['symbol']} {d['timeframe']}  {window.index[0].date()} -> "
           f"{window.index[-1].date()}  [{period}]\n")
-    print_report({STRATEGY_NAMES[strategy]: strat, "Buy & hold": bench})
+    results = {STRATEGY_NAMES[strategy]: strat}
+    if "stress_costs" in cfg:
+        stressed = copy.deepcopy(cfg)
+        stressed["costs"] = cfg["stress_costs"]
+        results["(stress costs)"] = run(stressed, bars, strategy, period)[2]
+    results["Buy & hold"] = bench
+    print_report(results)
 
     closed = pd.DataFrame([t for t in trades if t["exit_date"] is not None])
     if not closed.empty:

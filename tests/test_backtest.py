@@ -38,7 +38,8 @@ def test_trades_fill_at_next_open_not_same_close(cfg):
     w = pd.Series([0, 1, 1, 1], index=p.index, dtype=float)
     _, trades, _ = run_backtest(p, w, cfg)
     assert trades[0]["entry_date"] == p.index[2]
-    assert trades[0]["entry_price"] == pytest.approx(110 * 1.0002)
+    slip = cfg["costs"]["slippage_bps"] / 10_000
+    assert trades[0]["entry_price"] == pytest.approx(110 * (1 + slip))
 
 
 def test_round_trip_pnl_is_net_of_costs(cfg):
