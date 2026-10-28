@@ -61,6 +61,9 @@ def run(cfg, bars, strategy=None, period="all"):
         weight = weight * regime_scale(bars, cfg).fillna(1.0)
     if cfg["sizing"].get("kelly"):
         weight = weight * _kelly_scale(bars, weight, reasons, cfg)
+    # Each scale is capped on its own; the product must respect the cap too.
+    max_lev = cfg["sizing"]["max_leverage"]
+    weight = weight.clip(-max_lev, max_lev)
     bars = period_slice(bars, cfg, period)
     sessions = session_dates(bars.index)
     return run_backtest(bars, weight.reindex(bars.index), cfg, reasons.reindex(bars.index),

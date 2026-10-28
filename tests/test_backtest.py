@@ -100,3 +100,12 @@ def test_kelly_uses_only_past_returns_and_respects_caps():
     assert lev.between(0, 10.0).all()
     neg = kelly_leverage(pd.Series(rng.normal(-0.001, 0.01, 200)), 0.5, 50, 20, 4.0)
     assert neg.iloc[100:].eq(0).all()                # negative edge -> don't trade
+
+
+def test_short_positions_respect_leverage_cap(cfg):
+    cfg["costs"].update(commission_per_share=0, commission_min=0, slippage_bps=0)
+    cfg["sizing"]["max_leverage"] = 2.0
+    p = prices_from([100, 100, 100, 100], [100, 100, 100, 100])
+    w = pd.Series([-4, -4, 0, 0], index=p.index, dtype=float)   # asks for 4x short
+    _, trades, _ = run_backtest(p, w, cfg)
+    assert trades[0]["shares"] == -2000                            # capped at 2x

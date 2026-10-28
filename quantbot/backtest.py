@@ -54,11 +54,15 @@ def run_backtest(prices, target_weight, cfg, reasons=None, sessions=None, force_
         side = 1 if delta > 0 else -1
         px = fill_price(opens[i], side, costs["slippage_bps"])
         fee = commission(delta, costs["commission_per_share"], costs["commission_min"])
-        # Buying power: a long position can't exceed max_leverage x equity.
-        if side > 0 and shares + delta > 0:
+        # Buying power: a position (long or short) can't exceed
+        # max_leverage x equity.
+        if abs(shares + delta) > abs(shares):
             equity_now = cash + shares * opens[i]
             limit = math.floor((max_leverage * equity_now - fee) / px)
-            delta = max(0, min(delta, limit - shares))
+            if side > 0:
+                delta = max(0, min(delta, limit - shares))
+            else:
+                delta = min(0, max(delta, -limit - shares))
             fee = commission(delta, costs["commission_per_share"], costs["commission_min"])
         if delta == 0:
             return 0
