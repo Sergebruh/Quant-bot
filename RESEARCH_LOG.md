@@ -283,4 +283,18 @@ net-profit target. G met both.
    pairs or spreads between closely related ETFs (the owner's original
    preference), with a new locked holdout from the start.
 
+### Extra out-of-sample check: same frozen candidate F on other ETFs
+The ETF list (QQQ, IWM, DIA) was fixed before looking. Nothing was changed.
+Full 2016-01 to 2026-10 period, realistic costs:
+
+| ETF | Net profit | Sharpe | Max DD | Stress Sharpe | Buy & hold Sharpe | Nov 2024–Oct 2026 Sharpe |
+|---|---|---|---|---|---|---|
+| QQQ | $213,727 | 1.02 | 12.7% | 0.33 | 0.90 | 0.24 |
+| IWM | −$6,627 | −0.05 | 30.0% | −0.38 | 0.50 | −1.06 |
+| DIA | −$28,298 | −0.72 | 29.4% | −1.00 | 0.69 | −0.64 |
+
+Only QQQ worked, and it was weak recently too. **1 of 3 passes, so the edge
+doesn't generalize.** That makes it more likely that the SPY dev result was
+partly luck plus our variant selection, not just decay.
+
 **Decision:** pending owner review.
