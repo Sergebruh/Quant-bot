@@ -65,7 +65,7 @@ signal:
   max_hold_days: 10             # time stop
 
 regime:
-  enabled: false
+  enabled: true                 # candidate F (see RESEARCH_LOG run 3)
   mode: filter                  # filter: trade only in the trending state
                                 # scale: size by P(trending)
   n_states: 2                   # trending vs choppy
@@ -78,13 +78,13 @@ regime:
   vol_window: 20                # (daily swing version, unused here)
 
 sizing:
-  method: none                  # none | vol_target
-  max_leverage: 1.0             # 1 = no leverage. US day-trading accounts
+  method: vol_target            # none | vol_target   (candidate F)
+  max_leverage: 2.0             # candidate F. 1 = no leverage. US day-trading accounts
                                 # (>= $25k) can get up to 4x intraday.
   target_daily_vol: 0.02        # vol_target: aim for 2% daily vol per unit (paper)
   vol_lookback_days: 14         # vol_target: days of daily returns for the estimate
   target_vol: 0.10              # (daily swing version) 10% annualized
-  kelly: false                  # scale each day by fractional Kelly (see sizing.py)
+  kelly: true                   # scale each day by fractional Kelly (candidate F)
   kelly_fraction: 0.5           # bet half Kelly
   kelly_lookback_days: 252      # past days of strategy returns for mu / sigma^2
   kelly_min_days: 126           # use leverage 1 until this much history exists
