@@ -1,4 +1,5 @@
 import copy
+import math
 
 import numpy as np
 import pandas as pd
@@ -69,3 +70,18 @@ def test_metrics():
     assert sharpe_ratio([0.0, 0.0, 0.0]) == 0.0
     r = np.random.default_rng(0).normal(0.001, 0.01, 5000)
     assert sharpe_ratio(r) == pytest.approx(0.001 / 0.01 * np.sqrt(252), rel=0.15)
+
+
+def test_holds_shares_while_target_is_unchanged(cfg):
+    # Price drifts while the target stays at 1.0: no re-sizing orders, so the
+    # only costs are one entry and one exit.
+    p = prices_from([100, 101, 103, 106, 110, 110], [101, 103, 106, 110, 110, 110])
+    w = pd.Series([1, 1, 1, 1, 0, 0], index=p.index, dtype=float)
+    _, trades, _ = run_backtest(p, w, cfg)
+    assert len(trades) == 1
+    t = trades[0]
+    assert t["shares"] == math.floor(100_000 / (101 * (1 + cfg["costs"]["slippage_bps"] / 1e4)))
+    entry_fee = commission(t["shares"], cfg["costs"]["commission_per_share"], cfg["costs"]["commission_min"])
+    exit_fee = entry_fee
+    slip = t["shares"] * (101 + 110) * cfg["costs"]["slippage_bps"] / 1e4
+    assert t["costs"] == pytest.approx(entry_fee + exit_fee + slip, rel=1e-6)
