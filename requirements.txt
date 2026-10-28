@@ -1,0 +1,6 @@
+numpy>=2.0
+pandas>=2.2
+hmmlearn>=0.3
+yfinance>=0.2.50
+pyyaml>=6.0
+pytest>=8.0

@@ -1,0 +1,36 @@
+# Quant-bot settings. Every tunable number lives here, not in the code.
+
+data:
+  symbol: SPY
+  start: "2005-01-01"
+  end: null              # null = up to today
+  cache_dir: data
+
+costs:
+  commission_per_share: 0.005   # dollars per share
+  commission_min: 1.00          # minimum dollars per order
+  slippage_bps: 2.0             # basis points per side (2 bps = 0.02%)
+
+backtest:
+  starting_equity: 100000
+  risk_free_rate: 0.0           # annual, used in the Sharpe ratio
+
+signal:
+  lookback: 20                  # days for rolling mean / std
+  entry_z: -2.0                 # buy when z drops below this
+  exit_z: 0.0                   # sell when z climbs back to this
+  stop_z: -3.5                  # bail out if z falls below this
+  max_hold_days: 10             # time stop
+
+regime:
+  n_states: 3                   # calm / trending / crisis
+  vol_window: 20                # days for the rolling-volatility feature
+  train_window: 756             # ~3 years of daily bars per refit
+  refit_every: 21               # refit roughly monthly
+  calm_prob_threshold: 0.6      # only trade when P(calm) is above this
+
+sizing:
+  target_vol: 0.10              # 10% annualized volatility target
+  kelly_fraction: 0.5           # bet half Kelly
+  max_position: 1.0             # max 100% of equity (no leverage)
+  max_drawdown_halt: 0.20       # stop trading after a 20% drawdown
