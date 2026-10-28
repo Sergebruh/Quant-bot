@@ -164,7 +164,7 @@ quant-bot/
 ## Roadmap
 
 - [x] Design
-- [ ] v1: single-asset backtester on SPY (daily bars)
+- [ ] v1: single-asset backtester on SPY (daily bars). Engine + z-score done; see RESEARCH_LOG.md
 - [ ] v2: pairs trading, applying the z-score to the spread of two related
       assets (for example KO/PEP)
 - [ ] v3: paper trading through a broker API
