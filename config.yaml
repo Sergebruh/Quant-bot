@@ -72,7 +72,12 @@ regime:
   calm_prob_threshold: 0.6      # only trade when P(calm) is above this
 
 sizing:
-  target_vol: 0.10              # 10% annualized volatility target
+  method: none                  # none | vol_target
+  max_leverage: 1.0             # 1 = no leverage. US day-trading accounts
+                                # (>= $25k) can get up to 4x intraday.
+  target_daily_vol: 0.02        # vol_target: aim for 2% daily vol per unit (paper)
+  vol_lookback_days: 14         # vol_target: days of daily returns for the estimate
+  target_vol: 0.10              # (daily swing version) 10% annualized
   kelly_fraction: 0.5           # bet half Kelly
-  max_position: 1.0             # max 100% of equity (no leverage)
+  max_position: 1.0             # (daily swing version) max fraction of equity
   max_drawdown_halt: 0.20       # stop trading after a 20% drawdown

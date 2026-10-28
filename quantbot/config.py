@@ -63,6 +63,10 @@ def validate(cfg):
     size = cfg["sizing"]
     if not 0 < size["kelly_fraction"] <= 1:
         raise ValueError("sizing.kelly_fraction must be in (0, 1]")
+    if size.get("max_leverage", 1.0) <= 0:
+        raise ValueError("sizing.max_leverage must be positive")
+    if size.get("method", "none") not in ("none", "vol_target"):
+        raise ValueError("sizing.method must be none or vol_target")
     if size["max_position"] <= 0:
         raise ValueError("sizing.max_position must be positive")
     if not 0 < size["max_drawdown_halt"] < 1:

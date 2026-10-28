@@ -31,6 +31,7 @@ def run_backtest(prices, target_weight, cfg, reasons=None, sessions=None, force_
     """
     costs = cfg["costs"]
     start_eq = cfg["backtest"]["starting_equity"]
+    max_leverage = cfg.get("sizing", {}).get("max_leverage", 1.0)
     target = target_weight.reindex(prices.index).fillna(0.0).to_numpy()
     reason_arr = None if reasons is None else reasons.reindex(prices.index).to_numpy()
     if force_flat and sessions is None:
@@ -53,10 +54,11 @@ def run_backtest(prices, target_weight, cfg, reasons=None, sessions=None, force_
         side = 1 if delta > 0 else -1
         px = fill_price(opens[i], side, costs["slippage_bps"])
         fee = commission(delta, costs["commission_per_share"], costs["commission_min"])
-        # Don't let a buy that grows a long position overdraw cash.
+        # Buying power: a long position can't exceed max_leverage x equity.
         if side > 0 and shares + delta > 0:
-            affordable = math.floor((cash - fee) / px)
-            delta = max(0, min(delta, affordable))
+            equity_now = cash + shares * opens[i]
+            limit = math.floor((max_leverage * equity_now - fee) / px)
+            delta = max(0, min(delta, limit - shares))
             fee = commission(delta, costs["commission_per_share"], costs["commission_min"])
         if delta == 0:
             return 0

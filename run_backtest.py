@@ -10,6 +10,7 @@ from quantbot.backtest import buy_and_hold, run_backtest
 from quantbot.config import load_config
 from quantbot.intraday import session_dates, vwap_reversion_positions
 from quantbot.momentum import momentum_positions
+from quantbot.sizing import apply_sizing
 
 ROWS = [
     ("Net profit (after costs)", "net_profit", "${:,.0f}"),
@@ -53,6 +54,7 @@ def run(cfg, bars, strategy=None, period="all"):
         weight, reasons = momentum_positions(bars, cfg)
     else:
         weight, reasons, _ = vwap_reversion_positions(bars, cfg)
+    weight = apply_sizing(weight, bars, cfg)
     bars = period_slice(bars, cfg, period)
     sessions = session_dates(bars.index)
     return run_backtest(bars, weight.reindex(bars.index), cfg, reasons.reindex(bars.index),
