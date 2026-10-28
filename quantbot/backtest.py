@@ -21,7 +21,8 @@ def run_backtest(prices, target_weight, cfg, reasons=None, sessions=None, force_
     """Simulate trading `target_weight` (fraction of equity, decided at close).
 
     prices: DataFrame with open/close columns.
-    target_weight: Series aligned to prices.index, values in [0, max_position].
+    target_weight: Series aligned to prices.index. Positive = long, negative =
+        short, as a fraction of equity.
     reasons: optional Series of exit-reason labels, aligned like target_weight.
     sessions: optional Series of trading dates for intraday bars. Metrics are
         then computed on end-of-day equity.
@@ -46,8 +47,46 @@ def run_backtest(prices, target_weight, cfg, reasons=None, sessions=None, force_
     closes = prices["close"].to_numpy()
     dates = prices.index
 
+    def fill(i, delta, reason):
+        """Trade `delta` shares at bar i's open; return shares actually traded."""
+        nonlocal cash, shares, open_trade
+        side = 1 if delta > 0 else -1
+        px = fill_price(opens[i], side, costs["slippage_bps"])
+        fee = commission(delta, costs["commission_per_share"], costs["commission_min"])
+        # Don't let a buy that grows a long position overdraw cash.
+        if side > 0 and shares + delta > 0:
+            affordable = math.floor((cash - fee) / px)
+            delta = max(0, min(delta, affordable))
+            fee = commission(delta, costs["commission_per_share"], costs["commission_min"])
+        if delta == 0:
+            return 0
+        cash -= delta * px + fee
+        slip = abs(delta) * abs(px - opens[i])
+        if shares == 0:
+            open_trade = {
+                "side": "long" if delta > 0 else "short",
+                "entry_date": dates[i], "entry_price": px, "shares": delta,
+                "cost_basis": abs(delta) * px, "cash_flow": 0.0, "costs": 0.0,
+                "exit_date": None, "exit_price": None, "pnl": 0.0,
+                "days": 0, "bars": 0, "entry_bar": i, "reason": None,
+            }
+        elif (delta > 0) == (shares > 0):
+            open_trade["cost_basis"] += abs(delta) * px  # adding to the position
+        open_trade["cash_flow"] -= delta * px + fee
+        open_trade["costs"] += fee + slip
+        shares += delta
+        if shares == 0:
+            open_trade.update(
+                exit_date=dates[i], exit_price=px, pnl=open_trade["cash_flow"],
+                days=(dates[i] - open_trade["entry_date"]).days,
+                bars=i - open_trade["entry_bar"], reason=reason,
+            )
+            trades.append(open_trade)
+            open_trade = None
+        return delta
+
     for i in range(len(prices)):
-        # Trade at today's open toward yesterday's target.
+        # Trade at this bar's open toward the target decided at the previous close.
         if i > 0:
             want = target[i - 1]
             exit_reason = reason_arr[i - 1] if reason_arr is not None else None
@@ -56,42 +95,13 @@ def run_backtest(prices, target_weight, cfg, reasons=None, sessions=None, force_
                     exit_reason = "close"
                 want = 0.0
             value_at_open = cash + shares * opens[i]
-            desired = math.floor(want * value_at_open / opens[i]) if want > 0 else 0
-            delta = desired - shares
-            if delta != 0:
-                side = 1 if delta > 0 else -1
-                px = fill_price(opens[i], side, costs["slippage_bps"])
-                fee = commission(delta, costs["commission_per_share"], costs["commission_min"])
-                # Don't let a buy overdraw cash after slippage + fees.
-                if side > 0:
-                    affordable = math.floor((cash - fee) / px)
-                    delta = max(0, min(delta, affordable))
-                    fee = commission(delta, costs["commission_per_share"], costs["commission_min"])
-                if delta != 0:
-                    cash -= delta * px + fee
-                    slip = abs(delta) * abs(px - opens[i])
-                    if shares == 0:
-                        open_trade = {
-                            "entry_date": dates[i], "entry_price": px, "shares": delta,
-                            "cost_basis": delta * px + fee, "costs": fee + slip,
-                            "exit_date": None, "exit_price": None, "pnl": 0.0,
-                            "days": 0, "bars": 0, "entry_bar": i, "reason": None,
-                        }
-                    elif open_trade is not None:
-                        open_trade["costs"] += fee + slip
-                        if delta > 0:
-                            open_trade["cost_basis"] += delta * px + fee
-                    shares += delta
-                    if shares == 0 and open_trade is not None:
-                        open_trade["exit_date"] = dates[i]
-                        open_trade["exit_price"] = px
-                        proceeds = -delta * px - fee
-                        open_trade["pnl"] = proceeds - open_trade["cost_basis"]
-                        open_trade["days"] = (dates[i] - open_trade["entry_date"]).days
-                        open_trade["bars"] = i - open_trade["entry_bar"]
-                        open_trade["reason"] = exit_reason
-                        trades.append(open_trade)
-                        open_trade = None
+            desired = math.trunc(want * value_at_open / opens[i])
+            if desired != shares:
+                # Flipping long <-> short goes through flat, as two orders.
+                if shares != 0 and (desired == 0 or (desired > 0) != (shares > 0)):
+                    fill(i, -shares, exit_reason or "flip")
+                if desired != shares:
+                    fill(i, desired - shares, exit_reason)
 
         equity.append(cash + shares * closes[i])
 

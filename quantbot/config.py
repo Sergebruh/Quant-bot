@@ -43,6 +43,17 @@ def validate(cfg):
         if isig["max_hold_bars"] < 1:
             raise ValueError("intraday_signal.max_hold_bars must be at least 1")
 
+    mom = cfg.get("momentum_signal")
+    if mom:
+        if mom["lookback_days"] < 2:
+            raise ValueError("momentum_signal.lookback_days must be at least 2")
+        if mom["band_mult"] <= 0:
+            raise ValueError("momentum_signal.band_mult must be positive")
+        if not set(mom["decision_minutes"]) <= set(range(0, 60, 5)):
+            raise ValueError("momentum_signal.decision_minutes must be multiples of 5")
+    if cfg.get("strategy", "momentum") not in ("momentum", "vwap_reversion"):
+        raise ValueError("strategy must be momentum or vwap_reversion")
+
     reg = cfg["regime"]
     if reg["n_states"] < 2:
         raise ValueError("regime.n_states must be at least 2")
