@@ -36,6 +36,13 @@ def validate(cfg):
     if sig["max_hold_days"] < 1:
         raise ValueError("signal.max_hold_days must be at least 1")
 
+    isig = cfg.get("intraday_signal")
+    if isig:
+        if not isig["stop_z"] < isig["entry_z"] < isig["exit_z"]:
+            raise ValueError("intraday_signal: need stop_z < entry_z < exit_z")
+        if isig["max_hold_bars"] < 1:
+            raise ValueError("intraday_signal.max_hold_bars must be at least 1")
+
     reg = cfg["regime"]
     if reg["n_states"] < 2:
         raise ValueError("regime.n_states must be at least 2")

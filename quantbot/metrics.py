@@ -46,5 +46,6 @@ def summarize(equity, trades, starting_equity, risk_free_rate=0.0):
         "trades": len(closed),
         "win_rate": len(wins) / len(closed) if closed else 0.0,
         "avg_hold_days": float(np.mean([t["days"] for t in closed])) if closed else 0.0,
+        "avg_hold_bars": float(np.mean([t["bars"] for t in closed])) if closed else 0.0,
         "total_costs": float(sum(t["costs"] for t in trades)),
     }
