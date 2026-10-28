@@ -85,6 +85,7 @@ def run_backtest(prices, target_weight, cfg, reasons=None, sessions=None, force_
             open_trade = None
         return delta
 
+    last_want = 0.0
     for i in range(len(prices)):
         # Trade at this bar's open toward the target decided at the previous close.
         if i > 0:
@@ -94,6 +95,12 @@ def run_backtest(prices, target_weight, cfg, reasons=None, sessions=None, force_
                 if shares != 0 and last_bar[i]:
                     exit_reason = "close"
                 want = 0.0
+            # Only trade when the target changes; otherwise hold the same shares
+            # (re-sizing every bar as equity drifts just churns commissions).
+            if want == last_want and not (want == 0 and shares != 0):
+                equity.append(cash + shares * closes[i])
+                continue
+            last_want = want
             value_at_open = cash + shares * opens[i]
             desired = math.trunc(want * value_at_open / opens[i])
             if desired != shares:
