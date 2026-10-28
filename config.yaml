@@ -84,6 +84,9 @@ sizing:
   target_daily_vol: 0.02        # vol_target: aim for 2% daily vol per unit (paper)
   vol_lookback_days: 14         # vol_target: days of daily returns for the estimate
   target_vol: 0.10              # (daily swing version) 10% annualized
+  kelly: false                  # scale each day by fractional Kelly (see sizing.py)
   kelly_fraction: 0.5           # bet half Kelly
+  kelly_lookback_days: 252      # past days of strategy returns for mu / sigma^2
+  kelly_min_days: 126           # use leverage 1 until this much history exists
   max_position: 1.0             # (daily swing version) max fraction of equity
   max_drawdown_halt: 0.20       # stop trading after a 20% drawdown

@@ -11,7 +11,7 @@ from quantbot.config import load_config
 from quantbot.intraday import session_dates, vwap_reversion_positions
 from quantbot.momentum import momentum_positions
 from quantbot.regime import regime_scale
-from quantbot.sizing import apply_sizing
+from quantbot.sizing import apply_sizing, kelly_leverage
 
 ROWS = [
     ("Net profit (after costs)", "net_profit", "${:,.0f}"),
@@ -59,10 +59,28 @@ def run(cfg, bars, strategy=None, period="all"):
     if cfg["regime"].get("enabled"):
         # Days before the HMM has a year of history trade unfiltered.
         weight = weight * regime_scale(bars, cfg).fillna(1.0)
+    if cfg["sizing"].get("kelly"):
+        weight = weight * _kelly_scale(bars, weight, reasons, cfg)
     bars = period_slice(bars, cfg, period)
     sessions = session_dates(bars.index)
     return run_backtest(bars, weight.reindex(bars.index), cfg, reasons.reindex(bars.index),
                         sessions=sessions, force_flat=True)
+
+
+def _kelly_scale(bars, weight, reasons, cfg):
+    """Two passes: run at unit size over all bars, then size each day by
+    fractional Kelly estimated from the unit-size returns before that day."""
+    unit_cfg = copy.deepcopy(cfg)
+    unit_cfg["sizing"]["max_leverage"] = max(cfg["sizing"]["max_leverage"], 1.0)
+    equity, _, _ = run_backtest(bars, weight, unit_cfg, reasons,
+                                sessions=session_dates(bars.index), force_flat=True)
+    day = session_dates(bars.index).to_numpy()
+    daily = equity.groupby(day).last()
+    daily_ret = daily.pct_change().fillna(daily.iloc[0] / cfg["backtest"]["starting_equity"] - 1)
+    k = cfg["sizing"]
+    lev = kelly_leverage(daily_ret, k["kelly_fraction"], k["kelly_lookback_days"],
+                         k["kelly_min_days"], k["max_leverage"])
+    return pd.Series(day, index=bars.index).map(lev).astype(float)
 
 
 def main():

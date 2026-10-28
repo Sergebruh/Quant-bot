@@ -85,3 +85,18 @@ def test_holds_shares_while_target_is_unchanged(cfg):
     exit_fee = entry_fee
     slip = t["shares"] * (101 + 110) * cfg["costs"]["slippage_bps"] / 1e4
     assert t["costs"] == pytest.approx(entry_fee + exit_fee + slip, rel=1e-6)
+
+
+def test_kelly_uses_only_past_returns_and_respects_caps():
+    from quantbot.sizing import kelly_leverage
+    rng = np.random.default_rng(4)
+    r = pd.Series(rng.normal(0.0004, 0.01, 300))
+    r.iloc[250] = -0.06                              # one big loss on day 250
+    lev = kelly_leverage(r, fraction=0.5, lookback_days=100, min_days=50, max_leverage=10.0)
+    before = kelly_leverage(r.iloc[:251].where(r.index[:251] < 250, 0.0), 0.5, 100, 50, 10.0)
+    assert lev.iloc[:50].eq(1.0).all()               # not enough history yet
+    assert lev.iloc[250] == pytest.approx(before.iloc[250])  # day 250 can't see its own loss
+    assert lev.iloc[251] < lev.iloc[250]             # the loss lowers the next bet
+    assert lev.between(0, 10.0).all()
+    neg = kelly_leverage(pd.Series(rng.normal(-0.001, 0.01, 200)), 0.5, 50, 20, 4.0)
+    assert neg.iloc[100:].eq(0).all()                # negative edge -> don't trade
