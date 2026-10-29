@@ -146,3 +146,103 @@ next bar's open.
    profitable, so a filter has nothing good to select.
 
 **Decision:** pending owner approval.
+
+---
+
+## Run 4: intraday pairs trading (branch `feature/pairs`)
+
+The owner chose to return to **mean reversion** via pairs trading. This branch
+is built on `main` (with run 2 merged) and doesn't depend on the run 3 branches.
+
+### Design (fixed before any results)
+- **Pairs**, chosen for economic links before looking at results:
+  - stocks: KO/PEP, XOM/CVX, V/MA, HD/LOW, GOOGL/GOOG
+  - ETFs: QQQ/XLK, GLD/GDX, EWA/EWC
+- **Data:** 5-minute Alpaca SIP bars, split-adjusted, 2016–2026.
+- **Spread:** s = log A − β·log B. β comes from OLS on the previous 20
+  sessions. The spread's mean and σ come from the previous 5 sessions. All are
+  fixed before the open, so there's no look-ahead.
+- **Rules:**
+  - z < −2: buy A, short β·B
+  - z > +2: the reverse
+  - exit when z crosses 0, or stop out at |z| > 4 (no re-entry until
+    |z| < 2)
+  - entries 10:00–15:30 only, flat at the close, fills at the next bar's open
+- **Sizing:** dollar-hedged legs, gross exposure 1x equity. The portfolio
+  splits capital equally across the 8 pairs.
+- **Costs measured per symbol** from Alpaca quotes (30 random dev days × 3
+  times). Slippage per side = max(0.5 bp, 2.5 × median half-spread), so
+  0.5–5.8 bp depending on the symbol, plus $0.0035/share commission. The stress
+  test uses 4× slippage and $0.005/share. SPY measured 0.20 bp, consistent with
+  run 3's 0.18 bp.
+
+### Research going in
+- Bowen, Hutchinson & O'Sullivan (2010), FTSE 100 intraday pairs: 15 bp
+  costs cut returns by more than half, and **waiting one bar to execute
+  eliminated returns**. Most profits came in the first hour.
+- Gatev, Goetzmann & Rouwenhorst (2006): same-sector pairs work best on
+  daily data, but profits declined over time (Do & Faff 2010).
+- ETF studies: cointegrated ETF pairs beat stock pairs on daily data, but
+  intraday results are very cost-sensitive.
+
+### Dev results (2016-01 to 2024-10, realistic costs)
+
+| Pair | Net profit | Sharpe | Trades | Win rate |
+|---|---|---|---|---|
+| KO/PEP | −$30,194 | −1.17 | 1,032 | 39.9% |
+| XOM/CVX | −$34,875 | −1.11 | 1,044 | 41.8% |
+| V/MA | −$28,854 | −1.34 | 1,078 | 41.4% |
+| HD/LOW | −$24,534 | −0.84 | 1,035 | 43.0% |
+| GOOGL/GOOG | −$80,573 | −12.54 | 1,546 | 3.9% |
+| QQQ/XLK | −$32,870 | −4.26 | 1,052 | 29.6% |
+| GLD/GDX | −$49,202 | −2.80 | 1,034 | 34.5% |
+| EWA/EWC | −$64,499 | −5.27 | 902 | 19.5% |
+| **Portfolio (equal weight)** | **−$39,421** | **−1.02** | 8,723 | 28.8% |
+| SPY buy & hold | +$183,849 | 0.74 | — | — |
+
+**Verdict: FAIL.** Every pair loses after costs. The holdout was **not run**
+(pointless after a dev fail), so it stays unused for pairs.
+
+### Why it failed
+1. **A real but tiny edge, swamped by costs.** With zero costs, 6 of 8 pairs
+   make money (V/MA Sharpe 1.05, GOOGL/GOOG 2.51, HD/LOW 0.81, KO/PEP 0.67),
+   but the gross edge is only **1–2.5 bp per trade**. Costs per trade are
+   **3.7–13 bp**: four legs crossing the spread, plus commissions.
+
+   | Pair | Gross bp/trade | Cost bp/trade |
+   |---|---|---|
+   | KO/PEP | 1.96 | 5.39 |
+   | XOM/CVX | 0.25 | 4.29 |
+   | V/MA | 2.46 | 5.59 |
+   | HD/LOW | 2.56 | 5.22 |
+   | GOOGL/GOOG | 1.10 | 11.72 |
+   | QQQ/XLK | −0.15 | 3.65 |
+   | GLD/GDX | −1.42 | 5.10 |
+   | EWA/EWC | 1.70 | 13.16 |
+
+2. **Spreads don't close within the day.** About 75% of trades end at the
+   3:55 PM forced close and only ~6% reach the z = 0 target. After |z| crosses
+   2, the spread reverts only 0.3–1.4 bp over the next hour (stock pairs) and
+   not at all for ETF pairs.
+3. **No time-of-day pocket.** Gross edge is 0.7–2.1 bp/trade at every entry
+   hour, so the "first hour" effect from Bowen et al. isn't present here.
+4. **The one-bar execution delay.** Bowen et al. found that waiting one bar
+   wiped out intraday pairs profits. Our honest next-bar fills face the same
+   problem.
+
+### Suggested improvements (ranked)
+1. **Hold pairs for days instead of minutes** (classic Gatev-style daily
+   pairs trading). Spreads get days to revert, and costs are paid once per
+   multi-day move. This is where the published evidence is strongest. Catch:
+   it isn't day trading, since positions are held overnight. That's the
+   owner's call.
+2. **Cut costs with passive (limit) orders**, earning the spread instead of
+   paying it. This is how professional stat-arb works, but 5-minute bars can't
+   honestly simulate limit fills (getting filled mostly when the price moves
+   against you). It would need a quote-level backtest. High effort, high
+   uncertainty.
+3. **Not recommended:** wider entries (z > 3) or an intraday-only mean. The
+   gross edge is 2–10× smaller than costs, so threshold tweaks would mostly
+   be curve-fitting.
+
+**Decision:** pending owner review.
