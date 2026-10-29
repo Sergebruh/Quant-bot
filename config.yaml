@@ -1,5 +1,24 @@
 # Quant-bot settings. Every tunable number lives here, not in the code.
 
+# Day-trading data (Alpaca 5-minute bars, regular hours only)
+intraday_data:
+  symbol: SPY
+  start: "2016-01-01"
+  end: "2026-10-27"
+  timeframe: 5Min
+  feed: sip                     # full-market data
+  cache_dir: data
+
+intraday_signal:
+  entry_z: -2.0                 # buy when price is 2 sigma below VWAP
+  exit_z: 0.0                   # sell when price gets back to VWAP
+  stop_z: -3.5                  # bail out if it keeps falling
+  max_hold_bars: 12             # time stop: 12 x 5 min = 1 hour
+  warmup_bars: 6                # no entries in the first 30 minutes (VWAP too noisy)
+  last_entry: "15:30"           # no new trades after 3:30 PM
+  # Positions are always closed at the open of the day's last bar (3:55 PM).
+
+# Daily data (used by the original swing version, kept for reference)
 data:
   symbol: SPY
   start: "2005-01-01"
@@ -7,6 +26,8 @@ data:
   cache_dir: data
 
 costs:
+  # Conservative: Alpaca charges $0 commission on stocks; this is a typical
+  # per-share broker fee so results don't depend on a free broker.
   commission_per_share: 0.005   # dollars per share
   commission_min: 1.00          # minimum dollars per order
   slippage_bps: 2.0             # basis points per side (2 bps = 0.02%)

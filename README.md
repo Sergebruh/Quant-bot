@@ -1,11 +1,14 @@
 # Quant-bot
 
-A regime-aware **mean-reversion** trading bot. It buys when price has stretched
-unusually far below its normal level and sells as it snaps back, but only when
-the market is in a regime where mean reversion tends to work. It sizes each
-position with volatility and a fractional Kelly criterion.
+A **day-trading** bot for SPY on 5-minute bars. The current strategy is
+regime-aware **mean reversion**: buy when price stretches unusually far below
+today's VWAP and sell as it snaps back. Every position is closed before the
+market closes; nothing is held overnight. Positions are sized with volatility
+and a fractional Kelly criterion.
 
-> Status: design phase. The code isn't written yet; this document is the plan.
+> Status: data, engine and the baseline signal are built and tested. The
+> baseline fails (see `RESEARCH_LOG.md`); improvements go through the loop in
+> `CLAUDE.md`.
 
 ## Getting started
 
@@ -17,19 +20,28 @@ pip install -r requirements.txt
 python -m pytest
 ```
 
+Price data comes from Alpaca (a free paper account works). On your own machine,
+set `ALPACA_API_KEY` and `ALPACA_SECRET_KEY` as environment variables. Never
+commit keys. Then run:
+
+```bash
+python run_backtest.py            # day-trading backtest (5-minute bars)
+python run_daily_backtest.py      # original daily swing version, for reference
+```
+
 All tunable settings (costs, z-score levels, HMM, sizing) live in `config.yaml`.
 
 ## Strategy in one picture
 
 ```
-Daily prices
+5-minute SPY bars (regular hours, official calendar incl. half-days)
     │
     ▼
-[1] Regime filter (Hidden Markov Model)   →  calm / trending / crisis?
-    │   only trade mean reversion in the calm regime
+[1] Regime filter (Hidden Markov Model)   →  calm / trending / volatile day?
+    │   only trade mean reversion when the regime suits it
     ▼
-[2] Entry/exit signal (z-score)           →  is price unusually far from normal?
-    │   buy when z < −2, exit when z returns to ~0
+[2] Entry/exit signal (VWAP z-score)      →  how far is price from today's VWAP?
+    │   buy when z < −2, exit when z returns to 0
     ▼
 [3] Risk scaling (standard deviation)     →  how volatile is it right now?
     │   smaller positions when volatility is high
@@ -37,137 +49,121 @@ Daily prices
 [4] Position size (fractional Kelly)      →  how much capital to commit?
     │
     ▼
-Order (net of commissions + slippage)
+Order at the NEXT bar's open (net of commissions + slippage)
+    │
+    ▼
+Flat by 3:55 PM (12:55 PM on half-days). Nothing held overnight.
 ```
 
 ## 1. Regime filter: Hidden Markov Model
 
-Mean reversion works in calm, range-bound markets and loses money in strong
-trends and crashes, where a "cheap" price keeps getting cheaper. A Gaussian HMM
-finds these hidden market states from the data.
+Mean reversion only pays when price actually snaps back. On strong trend days a
+"cheap" price keeps getting cheaper. A Gaussian HMM finds hidden market states
+from the data.
 
-- **Inputs (features):** daily log returns and rolling 20-day volatility.
-- **States:** 3 (calm, trending, crisis), labeled after fitting by each state's
-  average volatility.
-- **Rule:** open new mean-reversion trades only when the probability of the calm
-  state is above 0.6 (`P(calm) > 0.6`). In the crisis state, close positions and
-  stay flat.
-- **No look-ahead:** refit the model on a rolling window of past data only. Use
-  *filtered* state probabilities (the forward algorithm), never the Viterbi
-  path, because Viterbi uses future data to smooth the past.
+- **Inputs (features):** intraday returns and realized volatility.
+- **States:** 3 (calm, trending, volatile), labeled after fitting by each
+  state's average volatility.
+- **Rule:** open new trades only when the probability of the favorable state is
+  above 0.6.
+- **No look-ahead:** refit on past data only, and use *filtered* probabilities
+  (the forward algorithm), never the Viterbi path.
 
-## 2. Signal: z-score
+## 2. Signal: VWAP z-score
+
+VWAP is the volume-weighted average price since today's open. Sigma is the
+volume-weighted standard deviation of price around it (the "VWAP bands"):
 
 ```
-z = (price − rolling_mean(N)) / rolling_std(N)        N = 20 days (to be tuned)
+z = (close − VWAP) / σ_VWAP          both reset every morning
 ```
 
-| Condition                         | Action            |
-|-----------------------------------|-------------------|
-| `z < −2.0` and regime is calm     | Enter long        |
-| `z ≥ 0` (back to the mean)        | Exit              |
-| `z < −3.5` (stop)                 | Exit, don't add   |
-| Held 10 days with no reversion    | Time-stop exit    |
-| Regime flips to crisis            | Exit immediately  |
+| Condition                            | Action              |
+|--------------------------------------|---------------------|
+| `z < −2.0`, after 10:00, before 15:30 | Enter long         |
+| `z ≥ 0` (back to VWAP)               | Exit                |
+| `z < −3.5`                           | Stop-loss exit      |
+| Held 12 bars (1 hour)                | Time-stop exit      |
+| 3:55 PM                              | Close everything    |
 
-Long-only to start. Shorting (`z > +2`) can be added later.
+Long-only to start.
 
 ## 3. Risk: standard deviation
 
-Standard deviation drives the z-score, and it also sets position size through
-**volatility targeting**:
-
-```
-vol_scale = target_vol / realized_vol      target_vol = 10% annualized
-```
-
-When the market gets wild, positions shrink automatically.
+Standard deviation drives the z-score and also sets size through **volatility
+targeting**: `vol_scale = target_vol / realized_vol`.
 
 ## 4. Position sizing: fractional Kelly
-
-For a continuous return stream, the Kelly-optimal fraction is:
 
 ```
 f* = μ / σ²       μ = expected return per trade, σ² = variance of trade returns
 ```
 
-- Estimate μ and σ² from **past trades in the same regime**, with a rolling
-  window and no look-ahead.
-- Bet **¼ to ½ Kelly**, never full Kelly. Estimates of the edge are noisy, and
-  full Kelly on an overestimated edge leads to large drawdowns.
-- Final size: `position = min(kelly_fraction × f*, vol_scale, max_position)`.
-- Hard caps: maximum position size of 100% of equity (no leverage at first) and
-  a pause in trading if drawdown exceeds 20%.
+Estimate μ and σ² from past trades only, bet **¼ to ½ Kelly**, and cap
+position size at 100% of equity (no leverage at first). Trading pauses if
+drawdown exceeds 20%.
 
 ## How we measure success
 
-We judge the bot on two numbers, both **after costs**:
+Two numbers, both **after costs**, always next to buying and holding SPY:
 
 ### Net profit (after commissions and slippage)
 
-Every simulated trade pays:
+| Cost        | Default assumption            | Config key              |
+|-------------|-------------------------------|-------------------------|
+| Commission  | $0.005 per share, $1 minimum  | `commission_per_share`  |
+| Slippage    | 2 basis points per side       | `slippage_bps`          |
 
-| Cost        | Default assumption            | Config key        |
-|-------------|-------------------------------|-------------------|
-| Commission  | $0.005 per share, $1 minimum  | `commission`      |
-| Slippage    | 2 basis points per side       | `slippage_bps`    |
-
-```
-net_profit = final_equity − starting_equity     (all costs already deducted)
-```
+Alpaca itself charges $0 commission. The default is deliberately conservative,
+and `RESEARCH_LOG.md` shows results across cost levels.
 
 ### Sharpe ratio
 
-Annualized and computed on daily net returns:
+Annualized and computed on end-of-day net returns:
 
 ```
 sharpe = mean(daily_return − rf_daily) / std(daily_return) × √252
 ```
 
-- `rf` = risk-free rate (default 0%, configurable).
-- **Target:** Sharpe > 1.0 out of sample. Anything below the Sharpe of buying
-  and holding SPY means the strategy isn't worth running.
-
-### Also reported
-
-Maximum drawdown, win rate, number of trades, average holding period, and total
-costs paid. These are always compared side by side with buying and holding SPY.
+**Target:** Sharpe > 1.0 out of sample and above buy-and-hold.
 
 ## Testing method
 
-1. **Walk-forward backtest:** train on years 1–3, test on year 4, roll forward
-   one year, and repeat. Only the out-of-sample (test) years count.
-2. **No peeking:** signals use data up to day *t* close, and trades fill at day
-   *t + 1* open.
-3. **Avoid overfitting:** a small set of parameters, tuned only on training
-   windows. Results must hold up when parameters are nudged ±20%.
-4. **Paper trade** for at least 1–3 months before any real money.
+1. **No peeking:** signals use data up to bar *t* close, and trades fill at bar
+   *t + 1* open. VWAP and sigma use only bars so far today.
+2. **Walk-forward:** tune on past windows and test on the next window only.
+3. **Avoid overfitting:** few parameters. Results must survive ±20% nudges.
+4. **Paper trade** on Alpaca for 1–3 months before any real money.
 
-## Planned project structure
+## Project structure
 
 ```
 quant-bot/
 ├── quantbot/
-│   ├── data.py        # download and cache prices (yfinance)
-│   ├── regime.py      # HMM fit + filtered regime probabilities
-│   ├── signals.py     # z-score entry/exit logic
-│   ├── sizing.py      # vol targeting + fractional Kelly
-│   ├── backtest.py    # walk-forward engine with commissions + slippage
-│   └── metrics.py     # net profit, Sharpe, drawdown, etc.
-├── config.yaml        # all tunable parameters and cost assumptions
-├── run_backtest.py
+│   ├── alpaca_data.py   # 5-minute bars + market calendar from Alpaca (cached)
+│   ├── intraday.py      # VWAP z-score signal
+│   ├── backtest.py      # bar-by-bar engine, next-bar fills, flat at the close
+│   ├── costs.py         # commission + slippage
+│   ├── metrics.py       # net profit, Sharpe, drawdown, etc.
+│   ├── config.py        # loads + validates config.yaml
+│   ├── data.py          # daily prices (yfinance), for the daily version
+│   └── signals.py       # daily z-score signal, for the daily version
+├── config.yaml
+├── run_backtest.py          # day-trading backtest
+├── run_daily_backtest.py    # daily swing backtest (reference)
+├── RESEARCH_LOG.md          # every run: results, diagnosis, decisions
+├── CLAUDE.md                # workflow + improvement loop
 └── tests/
 ```
-
-**Tech:** Python, pandas, numpy, hmmlearn, yfinance.
 
 ## Roadmap
 
 - [x] Design
-- [ ] v1: single-asset backtester on SPY (daily bars). Engine + z-score done; see RESEARCH_LOG.md
-- [ ] v2: pairs trading, applying the z-score to the spread of two related
-      assets (for example KO/PEP)
-- [ ] v3: paper trading through a broker API
+- [x] Daily swing baseline (run 1: failed, see log)
+- [x] Day-trading data, engine and VWAP baseline (run 2: failed, see log)
+- [ ] Next improvement, pending approval (see `RESEARCH_LOG.md`)
+- [ ] Regime filter, sizing, walk-forward
+- [ ] Paper trading on Alpaca
 
 ## Disclaimer
 
