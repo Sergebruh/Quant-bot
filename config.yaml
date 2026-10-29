@@ -18,6 +18,31 @@ intraday_signal:
   last_entry: "15:30"           # no new trades after 3:30 PM
   # Positions are always closed at the open of the day's last bar (3:55 PM).
 
+# Intraday pairs trading (run 4). Pairs were chosen for economic links before
+# any results were seen. Stocks use split-adjusted prices.
+pairs:
+  symbols: [[KO, PEP], [XOM, CVX], [V, MA], [HD, LOW], [GOOGL, GOOG],
+            [QQQ, XLK], [GLD, GDX], [EWA, EWC]]
+  adjustment: split
+  beta_days: 20                 # hedge ratio from the previous 20 sessions
+  zscore_days: 5                # spread mean / std from the previous 5 sessions
+  entry_z: 2.0
+  stop_z: 4.0
+  first_entry: "10:00"
+  last_entry: "15:30"
+  gross_leverage: 1.0           # long leg + short leg = 1x equity
+  costs:                        # realistic per-share commission (Alpaca: $0)
+    commission_per_share: 0.0035
+    commission_min: 0.35
+  stress_costs:
+    commission_per_share: 0.005
+    commission_min: 1.00
+  stress_slippage_mult: 4       # stress test: 4x the measured slippage
+  # Per-side slippage in basis points, from measured bid-ask spreads
+  # (max of 0.5 bp and 2.5x the measured half-spread). Filled in by
+  # experiments/measure_spreads.py.
+  slippage_bps: {}
+
 # Daily data (used by the original swing version, kept for reference)
 data:
   symbol: SPY
