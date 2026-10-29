@@ -8,7 +8,20 @@ intraday_data:
   timeframe: 5Min
   feed: sip                     # full-market data
   cache_dir: data
+  # Develop and tune on data up to dev_end only. Everything after it is a
+  # locked holdout, tested once on the final candidate (--holdout).
+  dev_end: "2024-10-31"
 
+# Intraday momentum (noise-area breakout, Zarattini/Aziz/Barbon)
+strategy: momentum              # momentum | vwap_reversion
+
+momentum_signal:
+  lookback_days: 14             # days used to measure the normal intraday move
+  band_mult: 1.0                # noise band width, in multiples of that move
+  decision_minutes: [0, 30]     # only act at :00 and :30
+  allow_short: true
+
+# Intraday VWAP mean reversion (run 2 baseline; failed)
 intraday_signal:
   entry_z: -2.0                 # buy when price is 2 sigma below VWAP
   exit_z: 0.0                   # sell when price gets back to VWAP
@@ -26,11 +39,19 @@ data:
   cache_dir: data
 
 costs:
-  # Conservative: Alpaca charges $0 commission on stocks; this is a typical
-  # per-share broker fee so results don't depend on a free broker.
-  commission_per_share: 0.005   # dollars per share
-  commission_min: 1.00          # minimum dollars per order
-  slippage_bps: 2.0             # basis points per side (2 bps = 0.02%)
+  # Realistic, from measured data: SPY's quoted spread is ~1 cent, a half-spread
+  # of ~0.18 bp (360 Alpaca quotes over 60 random days, see RESEARCH_LOG run 3).
+  # Slippage is set ~2.8x higher than that for safety. Commission is a typical
+  # per-share broker rate (Alpaca itself charges $0).
+  commission_per_share: 0.0035  # dollars per share
+  commission_min: 0.35          # minimum dollars per order
+  slippage_bps: 0.5             # basis points per side
+
+stress_costs:
+  # Pessimistic profile, always reported next to the realistic one.
+  commission_per_share: 0.005
+  commission_min: 1.00
+  slippage_bps: 2.0
 
 backtest:
   starting_equity: 100000
@@ -44,14 +65,28 @@ signal:
   max_hold_days: 10             # time stop
 
 regime:
-  n_states: 3                   # calm / trending / crisis
-  vol_window: 20                # days for the rolling-volatility feature
-  train_window: 756             # ~3 years of daily bars per refit
+  enabled: true                 # candidate F (see RESEARCH_LOG run 3)
+  mode: filter                  # filter: trade only in the trending state
+                                # scale: size by P(trending)
+  n_states: 2                   # trending vs choppy
+  features: [vr5]               # 5-day avg variance ratio (see regime.py)
+  train_window: 756             # ~3 years of daily features per refit
+  min_train_days: 252           # start once 1 year of history exists
   refit_every: 21               # refit roughly monthly
-  calm_prob_threshold: 0.6      # only trade when P(calm) is above this
+  trend_prob_threshold: 0.5     # filter mode: trade when P(trending) > this
+  calm_prob_threshold: 0.6      # (daily swing version, unused here)
+  vol_window: 20                # (daily swing version, unused here)
 
 sizing:
-  target_vol: 0.10              # 10% annualized volatility target
+  method: vol_target            # none | vol_target   (candidate F)
+  max_leverage: 2.0             # candidate F. 1 = no leverage. US day-trading accounts
+                                # (>= $25k) can get up to 4x intraday.
+  target_daily_vol: 0.02        # vol_target: aim for 2% daily vol per unit (paper)
+  vol_lookback_days: 14         # vol_target: days of daily returns for the estimate
+  target_vol: 0.10              # (daily swing version) 10% annualized
+  kelly: true                   # scale each day by fractional Kelly (candidate F)
   kelly_fraction: 0.5           # bet half Kelly
-  max_position: 1.0             # max 100% of equity (no leverage)
+  kelly_lookback_days: 252      # past days of strategy returns for mu / sigma^2
+  kelly_min_days: 126           # use leverage 1 until this much history exists
+  max_position: 1.0             # (daily swing version) max fraction of equity
   max_drawdown_halt: 0.20       # stop trading after a 20% drawdown

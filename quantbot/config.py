@@ -43,15 +43,34 @@ def validate(cfg):
         if isig["max_hold_bars"] < 1:
             raise ValueError("intraday_signal.max_hold_bars must be at least 1")
 
+    mom = cfg.get("momentum_signal")
+    if mom:
+        if mom["lookback_days"] < 2:
+            raise ValueError("momentum_signal.lookback_days must be at least 2")
+        if mom["band_mult"] <= 0:
+            raise ValueError("momentum_signal.band_mult must be positive")
+        if not set(mom["decision_minutes"]) <= set(range(0, 60, 5)):
+            raise ValueError("momentum_signal.decision_minutes must be multiples of 5")
+    if cfg.get("strategy", "momentum") not in ("momentum", "vwap_reversion"):
+        raise ValueError("strategy must be momentum or vwap_reversion")
+
     reg = cfg["regime"]
     if reg["n_states"] < 2:
         raise ValueError("regime.n_states must be at least 2")
+    if reg.get("mode", "filter") not in ("filter", "scale"):
+        raise ValueError("regime.mode must be filter or scale")
+    if not 0 < reg.get("trend_prob_threshold", 0.5) < 1:
+        raise ValueError("regime.trend_prob_threshold must be between 0 and 1")
     if not 0 < reg["calm_prob_threshold"] < 1:
         raise ValueError("regime.calm_prob_threshold must be between 0 and 1")
 
     size = cfg["sizing"]
     if not 0 < size["kelly_fraction"] <= 1:
         raise ValueError("sizing.kelly_fraction must be in (0, 1]")
+    if size.get("max_leverage", 1.0) <= 0:
+        raise ValueError("sizing.max_leverage must be positive")
+    if size.get("method", "none") not in ("none", "vol_target"):
+        raise ValueError("sizing.method must be none or vol_target")
     if size["max_position"] <= 0:
         raise ValueError("sizing.max_position must be positive")
     if not 0 < size["max_drawdown_halt"] < 1:

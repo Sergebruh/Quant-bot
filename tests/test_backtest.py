@@ -1,4 +1,5 @@
 import copy
+import math
 
 import numpy as np
 import pandas as pd
@@ -38,7 +39,8 @@ def test_trades_fill_at_next_open_not_same_close(cfg):
     w = pd.Series([0, 1, 1, 1], index=p.index, dtype=float)
     _, trades, _ = run_backtest(p, w, cfg)
     assert trades[0]["entry_date"] == p.index[2]
-    assert trades[0]["entry_price"] == pytest.approx(110 * 1.0002)
+    slip = cfg["costs"]["slippage_bps"] / 10_000
+    assert trades[0]["entry_price"] == pytest.approx(110 * (1 + slip))
 
 
 def test_round_trip_pnl_is_net_of_costs(cfg):
@@ -68,3 +70,42 @@ def test_metrics():
     assert sharpe_ratio([0.0, 0.0, 0.0]) == 0.0
     r = np.random.default_rng(0).normal(0.001, 0.01, 5000)
     assert sharpe_ratio(r) == pytest.approx(0.001 / 0.01 * np.sqrt(252), rel=0.15)
+
+
+def test_holds_shares_while_target_is_unchanged(cfg):
+    # Price drifts while the target stays at 1.0: no re-sizing orders, so the
+    # only costs are one entry and one exit.
+    p = prices_from([100, 101, 103, 106, 110, 110], [101, 103, 106, 110, 110, 110])
+    w = pd.Series([1, 1, 1, 1, 0, 0], index=p.index, dtype=float)
+    _, trades, _ = run_backtest(p, w, cfg)
+    assert len(trades) == 1
+    t = trades[0]
+    assert t["shares"] == math.floor(100_000 / (101 * (1 + cfg["costs"]["slippage_bps"] / 1e4)))
+    entry_fee = commission(t["shares"], cfg["costs"]["commission_per_share"], cfg["costs"]["commission_min"])
+    exit_fee = entry_fee
+    slip = t["shares"] * (101 + 110) * cfg["costs"]["slippage_bps"] / 1e4
+    assert t["costs"] == pytest.approx(entry_fee + exit_fee + slip, rel=1e-6)
+
+
+def test_kelly_uses_only_past_returns_and_respects_caps():
+    from quantbot.sizing import kelly_leverage
+    rng = np.random.default_rng(4)
+    r = pd.Series(rng.normal(0.0004, 0.01, 300))
+    r.iloc[250] = -0.06                              # one big loss on day 250
+    lev = kelly_leverage(r, fraction=0.5, lookback_days=100, min_days=50, max_leverage=10.0)
+    before = kelly_leverage(r.iloc[:251].where(r.index[:251] < 250, 0.0), 0.5, 100, 50, 10.0)
+    assert lev.iloc[:50].eq(1.0).all()               # not enough history yet
+    assert lev.iloc[250] == pytest.approx(before.iloc[250])  # day 250 can't see its own loss
+    assert lev.iloc[251] < lev.iloc[250]             # the loss lowers the next bet
+    assert lev.between(0, 10.0).all()
+    neg = kelly_leverage(pd.Series(rng.normal(-0.001, 0.01, 200)), 0.5, 50, 20, 4.0)
+    assert neg.iloc[100:].eq(0).all()                # negative edge -> don't trade
+
+
+def test_short_positions_respect_leverage_cap(cfg):
+    cfg["costs"].update(commission_per_share=0, commission_min=0, slippage_bps=0)
+    cfg["sizing"]["max_leverage"] = 2.0
+    p = prices_from([100, 100, 100, 100], [100, 100, 100, 100])
+    w = pd.Series([-4, -4, 0, 0], index=p.index, dtype=float)   # asks for 4x short
+    _, trades, _ = run_backtest(p, w, cfg)
+    assert trades[0]["shares"] == -2000                            # capped at 2x

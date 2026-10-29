@@ -145,4 +145,156 @@ next bar's open.
 4. **Not recommended now:** an HMM filter on this signal. No subgroup was
    profitable, so a filter has nothing good to select.
 
-**Decision:** pending owner approval.
+**Decision:** the owner approved option 1, intraday momentum, and authorized
+autonomous iteration on branches, with nothing merged without review.
+
+---
+
+## Run 3: intraday momentum + volatility sizing + HMM regime + Kelly
+
+Branches, stacked: `feature/intraday-momentum` → `experiment/vol-sizing` →
+`experiment/hmm-regime` → `experiment/kelly`.
+
+### Method changes (apply to everything below)
+- **Locked holdout.** Development and tuning used only 2016-01-04 to
+  2024-10-31 ("dev"). 2024-11-01 to 2026-10-27 (497 days) was untouched until
+  the final test, run once.
+- **Costs measured, not guessed.** 360 SPY quotes from Alpaca (SIP), sampled at
+  6 times of day on 60 random days: the median spread is 1 cent, a
+  **half-spread of 0.18 bp** (95th percentile 0.30 bp), with hundreds of shares
+  at the top of book. New default "realistic" costs: 0.5 bp slippage per side
+  (about 2.8x the measured half-spread) plus $0.0035/share commission
+  ($0.35 minimum). The old profile (2 bp + $0.005/share) is always reported
+  as a "stress" test.
+- **Engine fixes:**
+  1. It now holds shares until the target changes. Before, it re-sized every
+     bar, which cost about 3.4 orders per round trip and $2.5k of fees on the
+     baseline.
+  2. Short selling, and long↔short flips as two orders.
+  3. A leverage cap on the *combined* size after all scales, for shorts too.
+     This bug was found mid-run: vol-target × Kelly reached 2.6x under a 2x
+     "cap". All results below are after the fix.
+
+### Strategy
+Noise-area breakout from Zarattini, Aziz & Barbon (2024), implemented per the
+paper:
+- band = average |move from open| at each time of day over the previous 14
+  days, adjusted for the overnight gap
+- decisions only at :00 and :30
+- go long above the upper band, short below the lower band
+- trailing stop at max(upper band, VWAP) for longs, min(lower band, VWAP) for
+  shorts
+- flat at the close
+
+### Additions tested
+- **Volatility targeting** (paper): size = min(cap, 2% / σ of the last 14
+  daily returns).
+- **HMM regime filter**: a 2-state Gaussian HMM on the 5-day average intraday
+  *variance ratio* (trendiness). Refit every 21 days on the previous 756 days,
+  using filtered (forward) probabilities pushed one day ahead. The bot trades
+  only when P(trending) > 0.5.
+  - The first version also used realized vol. Its "trending" state just
+    tracked volatility (corr 0.60 with vol, 0.02 with trendiness) and *hurt*
+    results (Sharpe 0.60→0.43), so it was dropped.
+- **Fractional Kelly**: f* = μ/σ² from the strategy's own previous 252 daily
+  returns at unit size, half Kelly, clipped to [0, cap].
+
+### Dev results (2016-01 to 2024-10, realistic costs; stress in brackets)
+
+| Variant | Net profit | Sharpe | Max DD | Stress net / Sharpe |
+|---|---|---|---|---|
+| Buy & hold SPY | $183,865 | 0.74 | 34.2% | — |
+| A momentum baseline | $43,920 | 0.65 | 13.5% | −$19,029 / −0.32 |
+| B + vol-target (1x) | $54,902 | 0.83 | 12.3% | −$12,250 / −0.21 |
+| C + HMM only | $40,484 | 0.72 | 12.7% | −$295 / 0.02 |
+| D vol-target + HMM | $50,886 | 0.95 | 11.1% | $7,670 / 0.19 |
+| E D + ½ Kelly, cap 1x | $46,663 | 0.99 | 7.0% | $10,557 / 0.29 |
+| **F D + ½ Kelly, cap 2x** | **$120,669** | **1.05** | 12.4% | $20,922 / 0.30 |
+| G D + ½ Kelly, cap 4x | $366,819 | 1.09 | 18.8% | $13,200 / 0.17 |
+
+Also tried, not kept:
+- a simple variance-ratio rank filter (Sharpe 0.55–0.80): the HMM beat it, so
+  the HMM was kept per the "prefer simpler unless clearly better" rule
+- an HMM size-scaling mode instead of filtering (slightly worse)
+- quarter Kelly (worse)
+- volatility filters: no-lookahead tests showed no consistent pattern, so none
+  was used
+
+**Robustness (F, each parameter ±20%):** Sharpe ranged 0.85–1.10 and net
+profit $88k–$129k. All were profitable at realistic costs. The weakest was
+band width 0.8x (0.85). Kelly fraction barely matters: Kelly is usually at the
+cap, so in practice it acts as "use the cap unless the past year lost money".
+(It turned trading off for all of 2017, which the unsized strategy lost.)
+
+**F year by year (dev):** 2016 −10.8%, 2017 0% (Kelly off), 2018 +29.4%,
+2019 +0.7%, 2020 +5.5%, 2021 +10.9%, 2022 +36.3%, 2023 +10.8%, 2024 +7.5%.
+The best years (2018, 2022) were bad years for SPY.
+
+On dev, F met the Sharpe target (> 1.0 and above buy-and-hold) but not the
+net-profit target. G met both.
+
+### HOLDOUT (2024-11-01 to 2026-10-27, run once, nothing tuned after)
+
+| Variant | Net profit | Sharpe | Stress net |
+|---|---|---|---|
+| Buy & hold SPY | **$34,356** | **1.03** | — |
+| A baseline | −$4,011 | −0.29 | −$15,955 |
+| D vol-target + HMM | $690 | 0.11 | −$4,490 |
+| E ½ Kelly, cap 1x | $239 | 0.05 | −$5,381 |
+| F ½ Kelly, cap 2x | −$1,684 | −0.10 | −$3,144 |
+| G ½ Kelly, cap 4x | $432 | 0.08 | −$7,018 |
+
+**Verdict: FAIL.** The filters cut the losses but found no edge. F traded only
+72 of 497 days.
+
+### Why it failed (diagnosis only, no tuning on the holdout)
+1. **The edge faded after mid-2025.** Zero-cost baseline Sharpe by half-year
+   was positive in 13 of 14 half-years from 2018 through the first half of
+   2025, then −0.33 (H2 2025), −0.21 and −1.68 (2026).
+2. **It was always thin.** The first noise-area breakout of the day, held to
+   the close, earned ~3–4 bp gross on average across years, but no single year
+   was statistically significant (best t = 1.57).
+3. **The Gao et al. effect doesn't show in this sample.** The correlation
+   between the first half-hour (including overnight) and the last half-hour
+   was −0.22 to +0.17 by year, with no stable sign in 2016–2026.
+4. **Post-publication decay is the likely cause.** The paper came out in May
+   2024 and was widely replicated (e.g. TradingView scripts). McLean & Pontiff
+   (Journal of Finance, 2016) find anomaly returns fall ~58% after
+   publication, on average across 97 predictors.
+
+### Takeaways
+- The process worked as designed. The holdout caught an edge that looked good
+  in development (Sharpe 1.05–1.09) but didn't survive.
+- **Valid reusable parts:** measured cost model, no-churn engine, leverage
+  caps, walk-forward HMM with filtered probabilities, no-lookahead Kelly, and
+  the dev/holdout discipline.
+- **The holdout is now spent.** Any further tuning on 2024-11 to 2026-10 would
+  be overfitting, so new ideas need new out-of-sample data.
+
+### Suggested next steps (ranked)
+1. **Paper-trade candidate F on Alpaca for 1–3 months.** This gives genuinely
+   new data and tests the live pipeline (orders, fills, the 3:55 PM close).
+   It's free and honest. Expectation: roughly flat, given recent decay.
+2. **Test the same family on assets it wasn't developed on** (QQQ, IWM, or
+   other liquid ETFs) as a fresh out-of-sample check. Intraday momentum is
+   reported across ETFs (Gao et al. 2018). Pick the asset list *before*
+   looking.
+3. **Return to mean reversion where it's documented to exist,** e.g. intraday
+   pairs or spreads between closely related ETFs (the owner's original
+   preference), with a new locked holdout from the start.
+
+### Extra out-of-sample check: same frozen candidate F on other ETFs
+The ETF list (QQQ, IWM, DIA) was fixed before looking. Nothing was changed.
+Full 2016-01 to 2026-10 period, realistic costs:
+
+| ETF | Net profit | Sharpe | Max DD | Stress Sharpe | Buy & hold Sharpe | Nov 2024–Oct 2026 Sharpe |
+|---|---|---|---|---|---|---|
+| QQQ | $213,727 | 1.02 | 12.7% | 0.33 | 0.90 | 0.24 |
+| IWM | −$6,627 | −0.05 | 30.0% | −0.38 | 0.50 | −1.06 |
+| DIA | −$28,298 | −0.72 | 29.4% | −1.00 | 0.69 | −0.64 |
+
+Only QQQ worked, and it was weak recently too. **1 of 3 passes, so the edge
+doesn't generalize.** That makes it more likely that the SPY dev result was
+partly luck plus our variant selection, not just decay.
+
+**Decision:** pending owner review.
