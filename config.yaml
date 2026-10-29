@@ -8,6 +8,9 @@ intraday_data:
   timeframe: 5Min
   feed: sip                     # full-market data
   cache_dir: data
+  # Develop and tune on data up to dev_end only. Everything after it is a
+  # locked holdout, tested once on the final candidate (--holdout).
+  dev_end: "2024-10-31"
 
 intraday_signal:
   entry_z: -2.0                 # buy when price is 2 sigma below VWAP
@@ -41,7 +44,24 @@ pairs:
   # Per-side slippage in basis points, from measured bid-ask spreads
   # (max of 0.5 bp and 2.5x the measured half-spread). Filled in by
   # experiments/measure_spreads.py.
-  slippage_bps: {}
+  slippage_bps:                 # measured 2016-2024, 30 random days x 3 times
+    KO: 2.72    # median half-spread 1.09 bp, n=89
+    PEP: 1.42    # median half-spread 0.57 bp, n=86
+    XOM: 1.54    # median half-spread 0.62 bp, n=90
+    CVX: 2.02    # median half-spread 0.81 bp, n=90
+    V: 1.84    # median half-spread 0.74 bp, n=89
+    MA: 3.58    # median half-spread 1.43 bp, n=86
+    HD: 2.75    # median half-spread 1.10 bp, n=84
+    LOW: 1.9    # median half-spread 0.76 bp, n=84
+    GOOGL: 5.1    # median half-spread 2.04 bp, n=81
+    GOOG: 5.58    # median half-spread 2.23 bp, n=75
+    QQQ: 0.88    # median half-spread 0.35 bp, n=90
+    XLK: 1.85    # median half-spread 0.74 bp, n=90
+    GLD: 1.01    # median half-spread 0.40 bp, n=90
+    GDX: 4.97    # median half-spread 1.99 bp, n=90
+    EWA: 5.79    # median half-spread 2.32 bp, n=84
+    EWC: 4.5    # median half-spread 1.80 bp, n=86
+    SPY: 0.51    # median half-spread 0.20 bp, n=90
 
 # Daily data (used by the original swing version, kept for reference)
 data:

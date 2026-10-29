@@ -161,6 +161,8 @@ quant-bot/
 - [x] Design
 - [x] Daily swing baseline (run 1: failed, see log)
 - [x] Day-trading data, engine and VWAP baseline (run 2: failed, see log)
+- [x] Intraday pairs trading, 8 pairs (run 4: failed on costs, see log;
+      `python run_pairs.py`)
 - [ ] Next improvement, pending approval (see `RESEARCH_LOG.md`)
 - [ ] Regime filter, sizing, walk-forward
 - [ ] Paper trading on Alpaca
