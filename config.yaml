@@ -63,6 +63,16 @@ pairs:
     EWC: 4.5    # median half-spread 1.80 bp, n=86
     SPY: 0.51    # median half-spread 0.20 bp, n=90
 
+# Multi-day pairs (run 5): positions HELD OVERNIGHT, approved by the owner.
+# Same 8 pairs, measured slippage and commissions as `pairs` above.
+pairs_daily:
+  window_days: 60               # beta, mean and sigma from the previous 60 days
+  entry_z: 2.0
+  stop_z: 4.0
+  max_hold_days: 20             # time stop
+  borrow_bps_per_year: 50       # 0.5%/yr fee on the short leg (easy-to-borrow names)
+  gross_leverage: 1.0
+
 # Daily data (used by the original swing version, kept for reference)
 data:
   symbol: SPY

@@ -104,8 +104,10 @@ def pair_positions(pair, cfg):
             beta, z)
 
 
-def run_pair_backtest(pair, position, beta, cfg, symbols, reasons=None):
-    """Simulate a dollar-hedged pair, flat at each close.
+def run_pair_backtest(pair, position, beta, cfg, symbols, reasons=None, force_flat=True):
+    """Simulate a dollar-hedged pair. Intraday: flat at each close.
+    With force_flat=False (multi-day pairs), positions are held overnight and
+    the short leg pays a borrow fee (cfg pairs.borrow_bps_per_year) each night.
 
     A long spread holds +L/(1+beta) of equity in A and -beta*L/(1+beta) in B,
     so gross exposure is L (cfg pairs.gross_leverage). Shares are set when a
@@ -119,7 +121,8 @@ def run_pair_backtest(pair, position, beta, cfg, symbols, reasons=None):
     sym_a, sym_b = symbols
 
     sess = session_dates(pair.index)
-    last_bar = (sess != sess.shift(-1)).to_numpy()
+    last_bar = (sess != sess.shift(-1)).to_numpy() if force_flat else np.zeros(len(pair), bool)
+    borrow_daily = cfg["pairs"].get("borrow_bps_per_year", 0.0) / 1e4 / 252
     opens = {sym_a: pair["open_a"].to_numpy(), sym_b: pair["open_b"].to_numpy()}
     closes_a, closes_b = pair["close_a"].to_numpy(), pair["close_b"].to_numpy()
     pos = position.to_numpy()
@@ -159,7 +162,8 @@ def run_pair_backtest(pair, position, beta, cfg, symbols, reasons=None):
                     trade["cash_flow"] += f1 + f2
                     trade["costs"] += c1 + c2
                     trade.update(exit_date=dates[i], pnl=trade["cash_flow"], reason=why,
-                                 days=0, bars=i - trade["entry_bar"])
+                                 days=(dates[i] - trade["entry_date"]).days,
+                                 bars=i - trade["entry_bar"])
                     trades.append(trade)
                     trade = None
                 # Open the new one.
@@ -179,6 +183,14 @@ def run_pair_backtest(pair, position, beta, cfg, symbols, reasons=None):
                              "exit_date": None, "pnl": 0.0, "days": 0, "bars": 0,
                              "reason": None}
                 held_state = want
+        if not force_flat and held_state != 0:
+            # Overnight short-borrow fee on the short leg's market value.
+            short_value = sum(-shares[k] * c for k, c in ((sym_a, closes_a[i]), (sym_b, closes_b[i]))
+                              if shares[k] < 0)
+            fee = short_value * borrow_daily
+            cash -= fee
+            trade["cash_flow"] -= fee
+            trade["costs"] += fee
         equity.append(cash + shares[sym_a] * closes_a[i] + shares[sym_b] * closes_b[i])
 
     equity = pd.Series(equity, index=dates, name="equity")

@@ -113,3 +113,21 @@ def load_intraday(symbol, start, end, timeframe="5Min", feed="sip",
         calendar = fetch_calendar(start, end)
         calendar.to_csv(cal_cache)
     return trim_to_sessions(df, calendar)
+
+
+def load_daily(symbol, start, end, feed="sip", cache_dir="data", refresh=False,
+               adjustment="all"):
+    """Daily bars indexed by date. adjustment="all" = split + dividend adjusted,
+    so multi-day returns include dividends (paid by shorts, earned by longs)."""
+    cache = Path(cache_dir) / f"{symbol}_1Day_{start}_{end}_{adjustment}.csv"
+    if cache.exists() and not refresh:
+        df = pd.read_csv(cache, index_col=0, parse_dates=True)
+    else:
+        df = fetch_bars(symbol, start, end, "1Day", feed, adjustment)
+        df.index = pd.DatetimeIndex(df.index.date, name="date")
+        df = df[~df.index.duplicated(keep="last")].sort_index()
+        if end and (pd.Timestamp(end) - df.index[-1]).days > 7:
+            raise RuntimeError(f"{symbol}: data ends {df.index[-1].date()}, expected ~{end}")
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(cache)
+    return df

@@ -26,8 +26,10 @@ Record every run in `RESEARCH_LOG.md`: what changed, results, diagnosis, and
 the decision.
 
 ## Honesty rules for backtests
-- No look-ahead: decide at bar t close, trade at bar t+1 open. Day trading:
-  always flat at the close, never hold overnight. HMM uses filtered
+- No look-ahead: decide at bar t close, trade at bar t+1 open. Day-trading
+  strategies are always flat at the close. Exception approved by the owner:
+  multi-day pairs (`run_pairs_daily.py`) hold overnight and must charge a
+  short-borrow fee and use dividend-adjusted prices. HMM uses filtered
   probabilities only, never Viterbi.
 - Always report net of costs and next to buy-and-hold.
 - Keep a change only if it improves results for a reason we can explain. Tune
@@ -39,4 +41,6 @@ the decision.
 - Tests: `python -m pytest`
 - Day-trading backtest: `python run_backtest.py` (5-minute Alpaca bars; `--refresh` re-downloads)
 - Daily swing backtest (reference): `python run_daily_backtest.py`
+- Intraday pairs: `python run_pairs.py`; multi-day pairs: `python run_pairs_daily.py`
+- Measure bid-ask spreads: `python experiments/measure_spreads.py SYM ...`
 - Settings: `config.yaml`

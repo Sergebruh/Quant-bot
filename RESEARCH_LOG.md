@@ -246,3 +246,95 @@ is built on `main` (with run 2 merged) and doesn't depend on the run 3 branches.
    be curve-fitting.
 
 **Decision:** pending owner review.
+
+---
+
+## Run 5: multi-day pairs, held overnight (branch `experiment/pairs-daily`)
+
+The owner approved holding overnight to give spreads time to revert (option 1
+from run 4).
+
+### Design (fixed before any results)
+- **Same 8 pairs** and the same measured per-symbol slippage and commissions
+  as run 4.
+- **Data:** Alpaca daily bars, **split- and dividend-adjusted**, so longs earn
+  and shorts pay dividends.
+- **Signal:** β, the spread mean and σ come from the previous **60 trading
+  days** (rolling windows as in Avellaneda & Lee 2010; entry/exit rules as in
+  Gatev et al. 2006).
+  - enter at |z| > 2, exit when z crosses 0
+  - stop at |z| > 4
+  - **20-day time stop**
+  - decide at the close, fill at the next day's open
+- **Overnight costs:** a **0.5%/yr borrow fee** on the short leg. The stress
+  test uses 4× slippage, $0.005/share and a 2%/yr borrow fee.
+- **Sizing:** gross 1x per pair, equal capital across pairs.
+- The benchmark is SPY buy-and-hold with dividends.
+
+### Dev results (2016-01 to 2024-10, realistic costs)
+
+| Pair | Net profit | Sharpe | Trades | Win rate | Avg hold |
+|---|---|---|---|---|---|
+| KO/PEP | −$6,196 | −0.11 | 65 | 49% | 17.6d |
+| XOM/CVX | −$11,857 | −0.18 | 64 | 52% | 19.2d |
+| V/MA | +$9,559 | 0.24 | 68 | 57% | 15.2d |
+| HD/LOW | +$9,517 | 0.19 | 64 | 53% | 17.3d |
+| GOOGL/GOOG | −$2,190 | −0.27 | 77 | 46% | 13.7d |
+| QQQ/XLK | +$4,680 | 0.27 | 73 | 67% | 15.7d |
+| GLD/GDX | −$3,433 | −0.07 | 67 | 55% | 19.3d |
+| EWA/EWC | +$907 | 0.05 | 62 | 57% | 19.6d |
+| **Portfolio** | **−$212** | **−0.01** | 540 | 54% | 17.1d |
+| SPY buy & hold (with dividends) | +$226,494 | 0.85 | — | — | — |
+
+**Verdict: FAIL.** The holdout was not run, so it stays unused.
+
+### Why it failed
+1. **Costs are no longer the problem; the edge is.** Overnight holding did
+   fix the cost issue: gross edge per trade rose to as much as 21–23 bp (V/MA,
+   HD/LOW) against 5–15 bp of costs. But even at **zero cost**, per-pair
+   Sharpe is only −0.11 to 0.97 (GOOGL/GOOG best).
+
+   | Pair | Zero-cost Sharpe | Gross bp/trade | Cost bp/trade |
+   |---|---|---|---|
+   | KO/PEP | −0.01 | 0.9 | 7.0 |
+   | XOM/CVX | −0.11 | −9.8 | 6.0 |
+   | V/MA | 0.35 | 21.0 | 6.6 |
+   | HD/LOW | 0.26 | 23.0 | 6.5 |
+   | GOOGL/GOOG | 0.97 | 9.7 | 12.6 |
+   | QQQ/XLK | 0.47 | 11.1 | 4.8 |
+   | GLD/GDX | 0.05 | 2.6 | 6.8 |
+   | EWA/EWC | 0.29 | 19.2 | 15.2 |
+
+2. **Failed reversions cancel the wins.** At zero cost, 312 target exits
+   averaged **+79 bp**, but 149 time-stop exits (−80 bp) and 79 stop exits
+   (−95 bp) took back most of it.
+3. **Relationships break.** Zero-cost results were positive in 8 of 9 years,
+   but 2022 lost ~1,800 bp across trades, during the energy and rates shock
+   (XOM/CVX, GLD/GDX diverged).
+
+### Research
+- The classic results rely on **many data-selected pairs**. Gatev et al.
+  choose the 20 best-matching pairs from thousands of stocks each period;
+  diversification across many pairs is what drives the Sharpe. We used 8
+  hand-picked pairs.
+- Profits have shrunk: Do & Faff (2010) document a sharp decline after 2002.
+  A cointegration study over 1962–2014 found ~85 bp/month before costs but
+  ~33 bp/month after (Rad, Low & Faff 2016).
+- Pairs strategies have low market exposure, so they mainly serve as
+  *diversifiers*. Beating buy-and-hold's **net profit** at 1x gross in a bull
+  market is very unlikely by construction.
+
+### Suggested next steps (ranked)
+1. **Data-driven pair selection from a broad universe** (e.g. S&P 500
+   same-sector peers): pick the top N pairs by cointegration or distance on a
+   12-month formation window, trade the next 6 months, and repeat (Gatev
+   protocol). This is the strongest evidence-backed fix. Risk: a large search
+   increases false discoveries, so the walk-forward and holdout must be
+   strict. It also needs data for hundreds of symbols.
+2. **Revisit the targets for market-neutral strategies.** A pairs book can be
+   valuable with Sharpe ~1 and near-zero correlation to SPY, even if its net
+   profit is lower. That's the owner's call.
+3. **Not recommended:** tuning window, z thresholds or time stop on these 8
+   pairs. With 8 pairs × ~65 trades each, it would be curve-fitting.
+
+**Decision:** pending owner review.
