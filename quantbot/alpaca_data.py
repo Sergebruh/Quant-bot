@@ -24,11 +24,15 @@ def _headers():
     return {}
 
 
-def fetch_bars(symbol, start, end, timeframe="5Min", feed="sip"):
-    """Fetch all bars between start and end (ISO dates), following pagination."""
+def fetch_bars(symbol, start, end, timeframe="5Min", feed="sip", adjustment="raw"):
+    """Fetch all bars between start and end (ISO dates), following pagination.
+
+    adjustment: "raw" (as traded) or "split" (split-adjusted, needed for stocks
+    that split, e.g. GOOG 20:1 in 2022, so prices stay comparable across days).
+    """
     params = {
         "timeframe": timeframe, "start": start, "end": end, "feed": feed,
-        "adjustment": "raw", "limit": 10000,
+        "adjustment": adjustment, "limit": 10000,
     }
     rows, session = [], requests.Session()
     while True:
@@ -86,16 +90,21 @@ def trim_to_sessions(df, calendar):
 
 
 def load_intraday(symbol, start, end, timeframe="5Min", feed="sip",
-                  cache_dir="data", refresh=False):
+                  cache_dir="data", refresh=False, adjustment="raw"):
     """Regular-hours intraday bars, cached to a compressed CSV."""
-    cache = Path(cache_dir) / f"{symbol}_{timeframe}_{start}_{end}.csv.gz"
+    suffix = "" if adjustment == "raw" else f"_{adjustment}"
+    cache = Path(cache_dir) / f"{symbol}_{timeframe}_{start}_{end}{suffix}.csv.gz"
     cal_cache = Path(cache_dir) / f"calendar_{start}_{end}.csv"
     if cache.exists() and not refresh:
         df = pd.read_csv(cache, index_col=0)
         df.index = pd.to_datetime(df.index, utc=True).tz_convert(MARKET_TZ)
     else:
-        df = regular_hours(fetch_bars(symbol, start, end, timeframe, feed))
+        df = regular_hours(fetch_bars(symbol, start, end, timeframe, feed, adjustment))
         df = df[~df.index.duplicated(keep="last")].sort_index()
+        last_day = df.index[-1].date()
+        if end and (pd.Timestamp(end).date() - last_day).days > 7:
+            # A dropped page can end pagination early; don't cache a short file.
+            raise RuntimeError(f"{symbol}: data ends {last_day}, expected ~{end}; retry")
         cache.parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(cache)
     if cal_cache.exists() and not refresh:
@@ -104,3 +113,21 @@ def load_intraday(symbol, start, end, timeframe="5Min", feed="sip",
         calendar = fetch_calendar(start, end)
         calendar.to_csv(cal_cache)
     return trim_to_sessions(df, calendar)
+
+
+def load_daily(symbol, start, end, feed="sip", cache_dir="data", refresh=False,
+               adjustment="all"):
+    """Daily bars indexed by date. adjustment="all" = split + dividend adjusted,
+    so multi-day returns include dividends (paid by shorts, earned by longs)."""
+    cache = Path(cache_dir) / f"{symbol}_1Day_{start}_{end}_{adjustment}.csv"
+    if cache.exists() and not refresh:
+        df = pd.read_csv(cache, index_col=0, parse_dates=True)
+    else:
+        df = fetch_bars(symbol, start, end, "1Day", feed, adjustment)
+        df.index = pd.DatetimeIndex(df.index.date, name="date")
+        df = df[~df.index.duplicated(keep="last")].sort_index()
+        if end and (pd.Timestamp(end) - df.index[-1]).days > 7:
+            raise RuntimeError(f"{symbol}: data ends {df.index[-1].date()}, expected ~{end}")
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(cache)
+    return df

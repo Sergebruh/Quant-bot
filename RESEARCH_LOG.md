@@ -146,3 +146,195 @@ next bar's open.
    profitable, so a filter has nothing good to select.
 
 **Decision:** pending owner approval.
+
+---
+
+## Run 4: intraday pairs trading (branch `feature/pairs`)
+
+The owner chose to return to **mean reversion** via pairs trading. This branch
+is built on `main` (with run 2 merged) and doesn't depend on the run 3 branches.
+
+### Design (fixed before any results)
+- **Pairs**, chosen for economic links before looking at results:
+  - stocks: KO/PEP, XOM/CVX, V/MA, HD/LOW, GOOGL/GOOG
+  - ETFs: QQQ/XLK, GLD/GDX, EWA/EWC
+- **Data:** 5-minute Alpaca SIP bars, split-adjusted, 2016–2026.
+- **Spread:** s = log A − β·log B. β comes from OLS on the previous 20
+  sessions. The spread's mean and σ come from the previous 5 sessions. All are
+  fixed before the open, so there's no look-ahead.
+- **Rules:**
+  - z < −2: buy A, short β·B
+  - z > +2: the reverse
+  - exit when z crosses 0, or stop out at |z| > 4 (no re-entry until
+    |z| < 2)
+  - entries 10:00–15:30 only, flat at the close, fills at the next bar's open
+- **Sizing:** dollar-hedged legs, gross exposure 1x equity. The portfolio
+  splits capital equally across the 8 pairs.
+- **Costs measured per symbol** from Alpaca quotes (30 random dev days × 3
+  times). Slippage per side = max(0.5 bp, 2.5 × median half-spread), so
+  0.5–5.8 bp depending on the symbol, plus $0.0035/share commission. The stress
+  test uses 4× slippage and $0.005/share. SPY measured 0.20 bp, consistent with
+  run 3's 0.18 bp.
+
+### Research going in
+- Bowen, Hutchinson & O'Sullivan (2010), FTSE 100 intraday pairs: 15 bp
+  costs cut returns by more than half, and **waiting one bar to execute
+  eliminated returns**. Most profits came in the first hour.
+- Gatev, Goetzmann & Rouwenhorst (2006): same-sector pairs work best on
+  daily data, but profits declined over time (Do & Faff 2010).
+- ETF studies: cointegrated ETF pairs beat stock pairs on daily data, but
+  intraday results are very cost-sensitive.
+
+### Dev results (2016-01 to 2024-10, realistic costs)
+
+| Pair | Net profit | Sharpe | Trades | Win rate |
+|---|---|---|---|---|
+| KO/PEP | −$30,194 | −1.17 | 1,032 | 39.9% |
+| XOM/CVX | −$34,875 | −1.11 | 1,044 | 41.8% |
+| V/MA | −$28,854 | −1.34 | 1,078 | 41.4% |
+| HD/LOW | −$24,534 | −0.84 | 1,035 | 43.0% |
+| GOOGL/GOOG | −$80,573 | −12.54 | 1,546 | 3.9% |
+| QQQ/XLK | −$32,870 | −4.26 | 1,052 | 29.6% |
+| GLD/GDX | −$49,202 | −2.80 | 1,034 | 34.5% |
+| EWA/EWC | −$64,499 | −5.27 | 902 | 19.5% |
+| **Portfolio (equal weight)** | **−$39,421** | **−1.02** | 8,723 | 28.8% |
+| SPY buy & hold | +$183,849 | 0.74 | — | — |
+
+**Verdict: FAIL.** Every pair loses after costs. The holdout was **not run**
+(pointless after a dev fail), so it stays unused for pairs.
+
+### Why it failed
+1. **A real but tiny edge, swamped by costs.** With zero costs, 6 of 8 pairs
+   make money (V/MA Sharpe 1.05, GOOGL/GOOG 2.51, HD/LOW 0.81, KO/PEP 0.67),
+   but the gross edge is only **1–2.5 bp per trade**. Costs per trade are
+   **3.7–13 bp**: four legs crossing the spread, plus commissions.
+
+   | Pair | Gross bp/trade | Cost bp/trade |
+   |---|---|---|
+   | KO/PEP | 1.96 | 5.39 |
+   | XOM/CVX | 0.25 | 4.29 |
+   | V/MA | 2.46 | 5.59 |
+   | HD/LOW | 2.56 | 5.22 |
+   | GOOGL/GOOG | 1.10 | 11.72 |
+   | QQQ/XLK | −0.15 | 3.65 |
+   | GLD/GDX | −1.42 | 5.10 |
+   | EWA/EWC | 1.70 | 13.16 |
+
+2. **Spreads don't close within the day.** About 75% of trades end at the
+   3:55 PM forced close and only ~6% reach the z = 0 target. After |z| crosses
+   2, the spread reverts only 0.3–1.4 bp over the next hour (stock pairs) and
+   not at all for ETF pairs.
+3. **No time-of-day pocket.** Gross edge is 0.7–2.1 bp/trade at every entry
+   hour, so the "first hour" effect from Bowen et al. isn't present here.
+4. **The one-bar execution delay.** Bowen et al. found that waiting one bar
+   wiped out intraday pairs profits. Our honest next-bar fills face the same
+   problem.
+
+### Suggested improvements (ranked)
+1. **Hold pairs for days instead of minutes** (classic Gatev-style daily
+   pairs trading). Spreads get days to revert, and costs are paid once per
+   multi-day move. This is where the published evidence is strongest. Catch:
+   it isn't day trading, since positions are held overnight. That's the
+   owner's call.
+2. **Cut costs with passive (limit) orders**, earning the spread instead of
+   paying it. This is how professional stat-arb works, but 5-minute bars can't
+   honestly simulate limit fills (getting filled mostly when the price moves
+   against you). It would need a quote-level backtest. High effort, high
+   uncertainty.
+3. **Not recommended:** wider entries (z > 3) or an intraday-only mean. The
+   gross edge is 2–10× smaller than costs, so threshold tweaks would mostly
+   be curve-fitting.
+
+**Decision:** pending owner review.
+
+---
+
+## Run 5: multi-day pairs, held overnight (branch `experiment/pairs-daily`)
+
+The owner approved holding overnight to give spreads time to revert (option 1
+from run 4).
+
+### Design (fixed before any results)
+- **Same 8 pairs** and the same measured per-symbol slippage and commissions
+  as run 4.
+- **Data:** Alpaca daily bars, **split- and dividend-adjusted**, so longs earn
+  and shorts pay dividends.
+- **Signal:** β, the spread mean and σ come from the previous **60 trading
+  days** (rolling windows as in Avellaneda & Lee 2010; entry/exit rules as in
+  Gatev et al. 2006).
+  - enter at |z| > 2, exit when z crosses 0
+  - stop at |z| > 4
+  - **20-day time stop**
+  - decide at the close, fill at the next day's open
+- **Overnight costs:** a **0.5%/yr borrow fee** on the short leg. The stress
+  test uses 4× slippage, $0.005/share and a 2%/yr borrow fee.
+- **Sizing:** gross 1x per pair, equal capital across pairs.
+- The benchmark is SPY buy-and-hold with dividends.
+
+### Dev results (2016-01 to 2024-10, realistic costs)
+
+| Pair | Net profit | Sharpe | Trades | Win rate | Avg hold |
+|---|---|---|---|---|---|
+| KO/PEP | −$6,196 | −0.11 | 65 | 49% | 17.6d |
+| XOM/CVX | −$11,857 | −0.18 | 64 | 52% | 19.2d |
+| V/MA | +$9,559 | 0.24 | 68 | 57% | 15.2d |
+| HD/LOW | +$9,517 | 0.19 | 64 | 53% | 17.3d |
+| GOOGL/GOOG | −$2,190 | −0.27 | 77 | 46% | 13.7d |
+| QQQ/XLK | +$4,680 | 0.27 | 73 | 67% | 15.7d |
+| GLD/GDX | −$3,433 | −0.07 | 67 | 55% | 19.3d |
+| EWA/EWC | +$907 | 0.05 | 62 | 57% | 19.6d |
+| **Portfolio** | **−$212** | **−0.01** | 540 | 54% | 17.1d |
+| SPY buy & hold (with dividends) | +$226,494 | 0.85 | — | — | — |
+
+**Verdict: FAIL.** The holdout was not run, so it stays unused.
+
+### Why it failed
+1. **Costs are no longer the problem; the edge is.** Overnight holding did
+   fix the cost issue: gross edge per trade rose to as much as 21–23 bp (V/MA,
+   HD/LOW) against 5–15 bp of costs. But even at **zero cost**, per-pair
+   Sharpe is only −0.11 to 0.97 (GOOGL/GOOG best).
+
+   | Pair | Zero-cost Sharpe | Gross bp/trade | Cost bp/trade |
+   |---|---|---|---|
+   | KO/PEP | −0.01 | 0.9 | 7.0 |
+   | XOM/CVX | −0.11 | −9.8 | 6.0 |
+   | V/MA | 0.35 | 21.0 | 6.6 |
+   | HD/LOW | 0.26 | 23.0 | 6.5 |
+   | GOOGL/GOOG | 0.97 | 9.7 | 12.6 |
+   | QQQ/XLK | 0.47 | 11.1 | 4.8 |
+   | GLD/GDX | 0.05 | 2.6 | 6.8 |
+   | EWA/EWC | 0.29 | 19.2 | 15.2 |
+
+2. **Failed reversions cancel the wins.** At zero cost, 312 target exits
+   averaged **+79 bp**, but 149 time-stop exits (−80 bp) and 79 stop exits
+   (−95 bp) took back most of it.
+3. **Relationships break.** Zero-cost results were positive in 8 of 9 years,
+   but 2022 lost ~1,800 bp across trades, during the energy and rates shock
+   (XOM/CVX, GLD/GDX diverged).
+
+### Research
+- The classic results rely on **many data-selected pairs**. Gatev et al.
+  choose the 20 best-matching pairs from thousands of stocks each period;
+  diversification across many pairs is what drives the Sharpe. We used 8
+  hand-picked pairs.
+- Profits have shrunk: Do & Faff (2010) document a sharp decline after 2002.
+  A cointegration study over 1962–2014 found ~85 bp/month before costs but
+  ~33 bp/month after (Rad, Low & Faff 2016).
+- Pairs strategies have low market exposure, so they mainly serve as
+  *diversifiers*. Beating buy-and-hold's **net profit** at 1x gross in a bull
+  market is very unlikely by construction.
+
+### Suggested next steps (ranked)
+1. **Data-driven pair selection from a broad universe** (e.g. S&P 500
+   same-sector peers): pick the top N pairs by cointegration or distance on a
+   12-month formation window, trade the next 6 months, and repeat (Gatev
+   protocol). This is the strongest evidence-backed fix. Risk: a large search
+   increases false discoveries, so the walk-forward and holdout must be
+   strict. It also needs data for hundreds of symbols.
+2. **Revisit the targets for market-neutral strategies.** A pairs book can be
+   valuable with Sharpe ~1 and near-zero correlation to SPY, even if its net
+   profit is lower. That's the owner's call.
+3. **Not recommended:** tuning window, z thresholds or time stop on these 8
+   pairs. With 8 pairs × ~65 trades each, it would be curve-fitting.
+
+**Decision:** pending owner review.
