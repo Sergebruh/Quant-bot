@@ -105,7 +105,21 @@ drawdown exceeds 20%.
 
 ## How we measure success
 
-Two numbers, both **after costs**, always next to buying and holding SPY:
+Results are always **after costs** and next to buying and holding SPY. The
+final verdict uses out-of-sample data.
+
+### Targets
+
+| | Directional strategies | Market-neutral strategies |
+|---|---|---|
+| Sharpe ratio | > 1.0 **and** above buy-and-hold's | > 1.0 |
+| Under stress costs | still profitable | still profitable |
+| Max drawdown | smaller than buy-and-hold's | smaller than buy-and-hold's |
+| Correlation with SPY | — | between −0.3 and +0.3 |
+| Net profit vs buy-and-hold | reported, not required | reported, not required |
+
+Net profit isn't a target because leverage can scale it up or down; the
+Sharpe ratio stays the same either way.
 
 ### Net profit (after commissions and slippage)
 
@@ -125,7 +139,6 @@ Annualized and computed on end-of-day net returns:
 sharpe = mean(daily_return − rf_daily) / std(daily_return) × √252
 ```
 
-**Target:** Sharpe > 1.0 out of sample and above buy-and-hold.
 
 ## Testing method
 
