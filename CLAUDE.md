@@ -9,9 +9,8 @@
 ## The improvement loop (follow this every time)
 After every backtest run:
 
-1. **Fail?** Compare against the targets: net profit after commissions and
-   slippage beats buy-and-hold, **and** Sharpe ratio > 1.0 and above
-   buy-and-hold's. Anything short of that is a fail.
+1. **Fail?** Compare against the targets below. Anything short of them is a
+   fail.
 2. **Identify why.** Break results down (by exit reason, trend, volatility,
    year, worst trades) until the losses have a concrete cause. Use data, not
    guesses.
@@ -24,6 +23,24 @@ After every backtest run:
 
 Record every run in `RESEARCH_LOG.md`: what changed, results, diagnosis, and
 the decision.
+
+## Targets (set by the owner; final verdict on out-of-sample data)
+All results are after realistic costs, and always reported next to SPY
+buy-and-hold over the same period.
+
+Every strategy must have:
+1. **Sharpe ratio > 1.0**
+2. **A profit under stress costs** (the pessimistic cost profile)
+3. **Max drawdown smaller than buy-and-hold's**
+
+Plus, by type:
+- **Directional** (takes market-direction bets, e.g. momentum, mean reversion
+  on one asset): Sharpe must also be **above buy-and-hold's**. Net profit vs
+  buy-and-hold is reported but not required, since leverage scales profit,
+  not Sharpe.
+- **Market-neutral** (long and short at once, e.g. pairs): correlation of
+  daily returns with SPY must be **between −0.3 and +0.3**. No profit or
+  Sharpe comparison with buy-and-hold is required, but both are reported.
 
 ## Honesty rules for backtests
 - No look-ahead: decide at bar t close, trade at bar t+1 open. Day trading:
